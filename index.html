@@ -930,6 +930,8 @@ const SUBJECT_FULL = {
   RE: "Religious Education", "C/A": "Creative Arts"
 };
 function subjectKey(sub){ return SUBJECT_FULL[sub] || sub; }
+// Short column/label text. Science is always written out as Integrated Science.
+function subjectLabel(sub){ return sub === "SCIENCE" ? "INTEGRATED SCIENCE" : sub; }
 
 // ── CBC Career Pathways ─────────────────────────────────────────────────
 // Groups subjects into the three JSS pathway families for the report card's
@@ -1003,9 +1005,10 @@ function calcStats(scores) {
   const total = vals.reduce((a,b)=>a+b,0);
   const points = SUBJECTS.map(s=>getGrade(subjectTotal(scores, s))?.points||0).reduce((a,b)=>a+b,0);
   const avg = vals.length ? (total/vals.length).toFixed(2) : "0.00";
-  const ptAvg = SUBJECTS.length ? points/SUBJECTS.length : 0;
-  let level = "BE";
-  if (ptAvg >= 7.5) level="EE"; else if (ptAvg >= 5.5) level="ME"; else if (ptAvg >= 3.0) level="AE";
+  // Overall level comes from the learner's average percentage, so it always
+  // agrees with the band shown for that average (e.g. 83% = EE2 = EE).
+  const avgBand = getGrade(avg);
+  const level = vals.length && avgBand ? avgBand.level : "BE";
   return { total, points, avg, level };
 }
 
@@ -1772,7 +1775,7 @@ ${inner}
                 <tbody>
                   {SUBJECTS.map(s=>(
                     <tr key={s}>
-                      <td style={{...td,textAlign:"left",fontWeight:700}}>{s} <span style={{fontWeight:400,color:"#888"}}>({subjectKey(s)})</span></td>
+                      <td style={{...td,textAlign:"left",fontWeight:700}}>{subjectLabel(s)}{s!=="SCIENCE" && <span style={{fontWeight:400,color:"#888"}}> ({subjectKey(s)})</span>}</td>
                       <td style={td}>{means[s]}</td>
                       <td style={td}>{means[s+"_M"]}</td>
                       <td style={td}>{means[s+"_F"]}</td>
@@ -1800,7 +1803,7 @@ ${inner}
                 <tbody>
                   {SUBJECTS.map(s=>(
                     <tr key={s}>
-                      <td style={{...td,textAlign:"left",fontWeight:700}}>{s} <span style={{fontWeight:400,color:"#888"}}>({subjectKey(s)})</span></td>
+                      <td style={{...td,textAlign:"left",fontWeight:700}}>{subjectLabel(s)}{s!=="SCIENCE" && <span style={{fontWeight:400,color:"#888"}}> ({subjectKey(s)})</span>}</td>
                       <td style={{...td,textAlign:"left"}}>{champions[s]?champions[s].name:"–"}</td>
                       <td style={td}>{champions[s]?champions[s].score:"–"}</td>
                     </tr>
@@ -1880,7 +1883,7 @@ function PrintableClassList({ learners, grade, stream, term, year, classTeacher,
             <th style={{...CL.th,width:70}}>ASSM. NO.</th>
             <th style={{...CL.th,textAlign:"left",minWidth:130}}>LEARNER NAME</th>
             <th style={{...CL.th,width:30}}>SEX</th>
-            {SUBJECTS.map(s=><th key={s} style={CL.th}>{s}</th>)}
+            {SUBJECTS.map(s=><th key={s} style={CL.th}>{subjectLabel(s)}</th>)}
             {hasScores && <>
               <th style={CL.th}>TOTAL</th>
               <th style={CL.th}>AVG%</th>
@@ -1953,7 +1956,7 @@ function PrintableClassList({ learners, grade, stream, term, year, classTeacher,
         </tbody>
       </table>
       <div style={{fontSize:8.5,color:"#555",marginTop:4,lineHeight:1.5}}>
-        <b>Key:</b> {SUBJECTS.map(s=>`${s} = ${subjectKey(s)}`).join("  ·  ")}
+        <b>Key:</b> {SUBJECTS.filter(s=>s!=="SCIENCE").map(s=>`${s} = ${subjectKey(s)}`).join("  ·  ")}
       </div>
       <div style={CL.footer}>{schoolName||"Your School Name"} · {term} {year} · {label} · {new Date().toLocaleDateString()}</div>
     </div>
@@ -2157,7 +2160,7 @@ function ScoreEntryModal({ learner, grade, splitMode, classOptions, onSave, onCl
           <div style={M.grid}>
             {SUBJECTS.map(sub=>(
               <div key={sub} style={M.field}>
-                <label style={M.label}>{sub}</label>
+                <label style={M.label}>{subjectLabel(sub)}</label>
                 <input style={M.input} type="number" min="0" max="100"
                   value={scores[sub]}
                   onChange={e=>{
@@ -2635,9 +2638,9 @@ function App() {
               const sc = l.scores || {};
               const hasSc = SUBJECTS.some(s => Number(sc[s]) > 0);
               const pts = SUBJECTS.map(s => getGrade(sc[s])?.points||0).reduce((a,b)=>a+b,0);
-              const ptAvg = SUBJECTS.length ? pts/SUBJECTS.length : 0;
-              let lvl = "BE";
-              if (ptAvg>=7.5) lvl="EE"; else if (ptAvg>=5.5) lvl="ME"; else if (ptAvg>=3.0) lvl="AE";
+              const hv = SUBJECTS.map(s => Number(sc[s])).filter(v => v > 0);
+              const hAvgBand = hv.length ? getGrade(hv.reduce((a,b)=>a+b,0)/hv.length) : null;
+              const lvl = hAvgBand ? hAvgBand.level : "BE";
               histMap[name].push({ label, level: hasSc?lvl:"–", points: hasSc?pts:"–" });
             } else {
               histMap[name].push({ label, level: "–", points: "–" });
@@ -3537,7 +3540,7 @@ ${autoPrint ? "<scr"+"ipt>window.onload=function(){setTimeout(function(){window.
                 <th style={{...S.th,textAlign:"left",minWidth:80}}>Assm. No.</th>
                 <th style={{...S.th,textAlign:"left",minWidth:140}}>Name</th>
                 <th style={S.th}>Sex</th>
-                {SUBJECTS.map(s=><th key={s} style={S.th}>{s}</th>)}
+                {SUBJECTS.map(s=><th key={s} style={S.th}>{subjectLabel(s)}</th>)}
                 <th style={S.th}>Total</th>
                 <th style={S.th}>Avg</th>
                 <th style={S.th}>Pts</th>
@@ -3623,7 +3626,7 @@ ${autoPrint ? "<scr"+"ipt>window.onload=function(){setTimeout(function(){window.
           </table>
         </div>
         <div style={{fontSize:10.5,color:"#666",margin:"6px 2px 0",lineHeight:1.6}} className="no-print">
-          <b>Key:</b> {SUBJECTS.map(s=>`${s} = ${subjectKey(s)}`).join("  ·  ")}
+          <b>Key:</b> {SUBJECTS.filter(s=>s!=="SCIENCE").map(s=>`${s} = ${subjectKey(s)}`).join("  ·  ")}
         </div>
 
         {/* ── ALWAYS-RENDERED DOWNLOAD SOURCE (hidden) ──────────────────────
