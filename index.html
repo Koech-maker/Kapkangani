@@ -2346,6 +2346,14 @@ function App() {
     setUserSession(null);
   }
   const isAdmin = !!userSession && userSession.role === "admin";
+  // PERMISSIONS: only the Administrator may add, delete or edit learners / marks on the
+  // class results page and import marks. Class teachers are view/download only, and
+  // subject teachers enter marks only through their own subject log-in.
+  function denyNonAdmin() {
+    if (isAdmin) return false;
+    alert("Only the Administrator can add, delete or edit learners and marks here.\n\nSubject teachers enter marks from their own subject log-in. Class teachers can view and download only.");
+    return true;
+  }
 
   const [showSetup, setShowSetup] = useState(!GH);
   const [showTeacherAdmin, setShowTeacherAdmin] = useState(false);
@@ -2826,6 +2834,7 @@ function App() {
   }
 
   async function saveCurrentResults() {
+    if (denyNonAdmin()) return;
     if (!GH) {
       alert("Not connected to GitHub. Your changes were NOT saved. Please connect first (Setup screen) so marks can sync to other teachers.");
       return;
@@ -2834,6 +2843,19 @@ function App() {
     try {
       const classList = classesConfig[grade] || [""];
       let ok = true;
+      // SAFETY NET: refuse to quietly wipe out a class list. If saving would remove more than
+      // half of the learners already stored (or empty a class), the admin must confirm.
+      await loadDB(true);
+      for (const s of classList) {
+        const stored = ((DB_CACHE && DB_CACHE[learnersKey(grade,s)]) || []).length;
+        const now = (learnersByStream[s]||[]).length;
+        if (stored > 5 && now < stored / 2) {
+          if (!window.confirm(`WARNING: ${getStreamLabel(grade,s)} has ${stored} learners saved but only ${now} on screen.\n\nSaving will DELETE ${stored-now} learners.\n\nPress Cancel to stop. Press OK only if this is really what you want.`)) {
+            setSaving(false);
+            return;
+          }
+        }
+      }
       for (const s of classList) {
         const data = (learnersByStream[s]||[]).map(l=>({name:l.name,admNo:l.admNo||"",gender:l.gender||"",scores:l.scores}));
         ok = await saveShared(learnersKey(grade,s), data) && ok;
@@ -2858,6 +2880,7 @@ function App() {
   }
 
   function handleScoreSave(learner, payload) {
+    if (denyNonAdmin()) return;
     const split = isSplitGrade(grade);
     const oldStream = learner.stream || stream;
     const newStream = split ? (payload.stream || oldStream) : "";
@@ -2879,6 +2902,7 @@ function App() {
   }
 
   function handleAddLearner(name, streamSel, admNo, gender) {
+    if (denyNonAdmin()) return;
     const split = isSplitGrade(grade);
     const targetStream = split ? (streamSel || stream) : "";
     const lrns = getLearnersByStream(targetStream);
@@ -2889,6 +2913,7 @@ function App() {
   }
 
   function handleDeleteLearner(name, str) {
+    if (denyNonAdmin()) return;
     if (!window.confirm(`Remove ${name}?`)) return;
     const lrns = getLearnersByStream(str||stream);
     setLearnersByStream(str||stream, lrns.filter(l=>l.name!==name));
@@ -2979,6 +3004,7 @@ ${autoPrint ? "<scr"+"ipt>window.onload=function(){setTimeout(function(){window.
   }
 
   async function handleImportFile(file) {
+    if (denyNonAdmin()) return;
     if (split && viewMode==="combined") {
       alert("Please open a specific stream (not Combined) before importing — each stream is stored separately.");
       return;
@@ -3053,6 +3079,7 @@ ${autoPrint ? "<scr"+"ipt>window.onload=function(){setTimeout(function(){window.
   }
 
   async function handleImportExcelFile(file) {
+    if (denyNonAdmin()) return;
     if (split && viewMode==="combined") {
       alert("Please open a specific stream (not Combined) before importing — each stream is stored separately.");
       return;
@@ -3521,7 +3548,7 @@ ${autoPrint ? "<scr"+"ipt>window.onload=function(){setTimeout(function(){window.
             setPage("home");
           }}>← Back</button>
           <div style={S.topTitle}>{label} · {term} {year}
-            <span style={{display:"block",fontWeight:400,fontSize:10,color:"#777"}}>Saved locally on this laptop/browser only — not shared with anyone else</span>
+            <span style={{display:"block",fontWeight:400,fontSize:10,color:"#777"}}>{isAdmin ? "Administrator: you can add, edit and delete learners" : "View & download only — marks are entered by subject teachers; only the Administrator can add or delete learners"}</span>
             {dirty && <span style={{display:"inline-block",marginTop:3,background:"#b94a2c",color:"#fff",fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:10}}>● Unsaved changes</span>}
           </div>
           <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
@@ -3529,9 +3556,9 @@ ${autoPrint ? "<scr"+"ipt>window.onload=function(){setTimeout(function(){window.
             <button style={{...S.ghostBtn,...(commentSaved?{background:"#e8f5e9",color:"#2e7d32",borderColor:"#2e7d32"}:{})}} onClick={()=>setShowComment(true)}>{commentSaved?"✓ Comment saved":`💬 ${comment?"Edit":"Add"} Class Comment`}</button>
             <input style={{...S.input,maxWidth:160,fontSize:12}} placeholder="🔍 Search learner…"
               value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} />
-            <button style={{...S.ghostBtn,...(saved?{background:"#e8f5e9",color:"#2e7d32",borderColor:"#2e7d32"}:{})}}
-              onClick={saveCurrentResults} disabled={saving}>{saving?"Saving…":(saved?"✓ Saved!":"💾 Save")}</button>
-            <button style={S.ghostBtn} onClick={()=>setShowAddLearner(true)}>+ Learner</button>
+            {isAdmin && <button style={{...S.ghostBtn,...(saved?{background:"#e8f5e9",color:"#2e7d32",borderColor:"#2e7d32"}:{})}}
+              onClick={saveCurrentResults} disabled={saving}>{saving?"Saving…":(saved?"✓ Saved!":"💾 Save")}</button>}
+            {isAdmin && <button style={S.ghostBtn} onClick={()=>setShowAddLearner(true)}>+ Learner</button>}
             <button style={S.ghostBtn} onClick={()=>setSortMode(sortMode==="rank"?"name":"rank")}>
               {sortMode==="rank" ? "🔤 Sort A–Z" : "🏆 Sort by Rank"}
             </button>
@@ -3543,12 +3570,12 @@ ${autoPrint ? "<scr"+"ipt>window.onload=function(){setTimeout(function(){window.
             {hasScores && <button style={S.ghostBtn} onClick={()=>handlePrint("all",`Grade${grade}${viewMode==="combined"?"_Combined":(stream?"_"+stream:"")}_AllReportForms`)}>🖨 Print All Report Forms</button>}
             <button style={S.ghostBtn} onClick={handleDownloadCSV}>⬇ CSV</button>
             <button style={S.ghostBtn} onClick={handleDownloadTemplate}>⬇ Marks Template (CSV)</button>
-            <button style={S.ghostBtn} onClick={()=>csvInputRef.current?.click()}>📥 Import Marks (CSV)</button>
+            {isAdmin && <button style={S.ghostBtn} onClick={()=>csvInputRef.current?.click()}>📥 Import Marks (CSV)</button>}
             <input ref={csvInputRef} type="file" accept=".csv" style={{display:"none"}}
               onChange={e=>{ const f=e.target.files?.[0]; if(f) handleImportFile(f); e.target.value=""; }} />
             <button style={S.ghostBtn} onClick={handleDownloadExcel}>⬇ Excel (Filled)</button>
             <button style={S.ghostBtn} onClick={handleDownloadTemplateExcel}>⬇ Excel (Blank Template)</button>
-            <button style={S.ghostBtn} onClick={()=>xlsxInputRef.current?.click()}>📥 Import Marks (Excel)</button>
+            {isAdmin && <button style={S.ghostBtn} onClick={()=>xlsxInputRef.current?.click()}>📥 Import Marks (Excel)</button>}
             <input ref={xlsxInputRef} type="file" accept=".xlsx,.xls" style={{display:"none"}}
               onChange={e=>{ const f=e.target.files?.[0]; if(f) handleImportExcelFile(f); e.target.value=""; }} />
             <button style={S.ghostBtn} onClick={()=>setShowAnalysis(true)}>📊 Results Analysis</button>
@@ -3645,10 +3672,10 @@ ${autoPrint ? "<scr"+"ipt>window.onload=function(){setTimeout(function(){window.
                     <td style={{...S.tdC,borderRight:"1px solid #e0e0e0"}}>{l.total?l.points:"–"}</td>
                     <td style={{...S.tdC,fontWeight:700,fontSize:10,borderRight:"1px solid #e0e0e0"}}>{og?og.sub:"–"}</td>
                     <td style={{...S.tdC,whiteSpace:"nowrap"}}>
-                      <button style={S.actionBtn} title="Edit" onClick={()=>setEditingLearner({...l,stream:l.stream||stream})}>✏️</button>
+                      {isAdmin && <button style={S.actionBtn} title="Edit" onClick={()=>setEditingLearner({...l,stream:l.stream||stream})}>✏️</button>}
                       {l.total>0&&<button style={S.actionBtn} disabled={pdfBusy} title="Download report form" onClick={()=>handleDownload(l,`${l.name.replace(/\s+/g,"_")}_ReportForm`)}>⬇</button>}
                       {l.total>0&&<button style={S.actionBtn} title="Print report form" onClick={()=>handlePrint(l,`${l.name.replace(/\s+/g,"_")}_ReportForm`)}>🖨</button>}
-                      <button style={S.actionBtn} title="Remove" onClick={()=>handleDeleteLearner(l.name,l.stream||stream)}>🗑️</button>
+                      {isAdmin && <button style={S.actionBtn} title="Remove" onClick={()=>handleDeleteLearner(l.name,l.stream||stream)}>🗑️</button>}
                     </td>
                   </tr>
                 );
